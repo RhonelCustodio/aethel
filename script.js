@@ -35,13 +35,13 @@ const KB_SOURCE = Object.assign(
     provider: "file", // "file" | "firestore"
 
     firestore: {
-      projectId: "YOUR_FIREBASE_PROJECT_ID",
+      projectId: "onevictoria-96863",
       topicsCollection: "topics",  // one doc per topic
       configCollection: "config",  // "app" + "fallback" docs
     },
 
     file: {
-      cloudUrl: "https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/aethel/main/knowledge.json",
+      cloudUrl: "https://raw.githubusercontent.com/RhonelCustodio/aethel/main/knowledge.json",
       localCopy: "knowledge.json",
     },
 
