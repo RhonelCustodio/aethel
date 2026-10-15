@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aethel</title>
+    <meta name="description" content="Aethel — your AI assistant." />
+    <meta name="theme-color" content="#05060a" />
+
+    <!-- Favicon (same as logo) -->
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='12' y1='8' x2='52' y2='56' gradientUnits='userSpaceOnUse'><stop stop-color='%23E9D5FF'/><stop offset='.5' stop-color='%23A5B4FC'/><stop offset='1' stop-color='%2367E8F9'/></linearGradient></defs><rect width='64' height='64' rx='16' fill='%230B0C14'/><path d='M17 50 32 16 47 50' fill='none' stroke='url(%23g)' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/><circle cx='32' cy='40' r='4.5' fill='url(%23g)'/></svg>"
+    />
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Inter:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Tailwind CSS (v4 Play CDN) -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @theme {
+        --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+        --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
+
+        --animate-fade-up: fade-up 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+        --animate-glow: glow 6s ease-in-out infinite;
+
+        @keyframes fade-up {
+          from {
+            opacity: 0;
+            transform: translateY(14px);
+            filter: blur(6px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+            filter: blur(0);
+          }
+        }
+        @keyframes glow {
+          0%,
+          100% {
+            opacity: 0.45;
+            transform: scale(1);
+          }
+          50% {
+            opacity: 0.8;
+            transform: scale(1.12);
+          }
+        }
+      }
+    </style>
+  </head>
+
+  <body
+    class="h-dvh overflow-hidden bg-[#05060a] font-sans text-white antialiased selection:bg-violet-500/30"
+  >
+    <!-- ============ Background (decorative) ============ -->
+    <div aria-hidden="true" class="pointer-events-none fixed inset-0 z-0">
+      <!-- aurora glow (top) -->
+      <div
+        class="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_-10%,rgba(99,102,241,0.38),rgba(139,92,246,0.12)_45%,transparent_75%)]"
+      ></div>
+      <!-- soft center light -->
+      <div
+        class="absolute inset-0 bg-[radial-gradient(ellipse_45%_35%_at_50%_48%,rgba(99,102,241,0.09),transparent_70%)]"
+      ></div>
+      <!-- side glows -->
+      <div
+        class="absolute inset-0 bg-[radial-gradient(circle_at_10%_62%,rgba(139,92,246,0.13),transparent_32%)]"
+      ></div>
+      <div
+        class="absolute inset-0 bg-[radial-gradient(circle_at_90%_68%,rgba(34,211,238,0.10),transparent_32%)]"
+      ></div>
+      <!-- dotted grid -->
+      <div
+        class="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.08)_1px,transparent_1px)] bg-size-[28px_28px] mask-[radial-gradient(ellipse_55%_45%_at_50%_45%,black,transparent)]"
+      ></div>
+    </div>
+
+    <div class="relative z-10 flex h-dvh flex-col">
+      <!-- ============ Top bar (visible only during a conversation) ============ -->
+      <header
+        id="topbar"
+        class="relative hidden items-center justify-between px-4 py-2.5"
+      >
+        <div class="flex items-center gap-2.5 pl-1">
+          <div
+            class="grid size-8 place-items-center rounded-[10px] border border-white/15 bg-[#0b0c14]/80 backdrop-blur-xl"
+          >
+            <svg
+              class="size-5"
+              viewBox="0 0 64 64"
+              fill="none"
+              aria-hidden="true"
+            >
+              <defs>
+                <linearGradient
+                  id="aethel-gradient-sm"
+                  x1="12"
+                  y1="8"
+                  x2="52"
+                  y2="56"
+                  gradientUnits="userSpaceOnUse"
+                >
+                  <stop stop-color="#E9D5FF" />
+                  <stop offset="0.5" stop-color="#A5B4FC" />
+                  <stop offset="1" stop-color="#67E8F9" />
+                </linearGradient>
+              </defs>
+              <path
+                d="M14 52 32 12 50 52"
+                stroke="url(#aethel-gradient-sm)"
+                stroke-width="6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <circle cx="32" cy="40" r="5" fill="url(#aethel-gradient-sm)" />
+            </svg>
+          </div>
+          <span
+            class="font-serif text-xl leading-none tracking-tight text-white/90"
+            >Aethel</span
+          >
+        </div>
+        <div class="flex items-center gap-1">
+          <button
+            id="history-btn"
+            type="button"
+            aria-label="Chat history"
+            title="Chat history"
+            aria-haspopup="true"
+            aria-expanded="false"
+            class="grid size-8 place-items-center rounded-full text-white/55 transition hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300"
+          >
+            <svg
+              class="size-[17px]"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 7v5l3 3" />
+            </svg>
+          </button>
+          <button
+            id="new-chat-btn"
+            type="button"
+            aria-label="New chat"
+            title="New chat"
+            class="grid size-8 place-items-center rounded-full text-white/55 transition hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300"
+          >
+            <svg
+              class="size-[17px]"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path
+                d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"
+              />
+              <path d="M18.375 2.625a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Chat history panel -->
+        <div
+          id="history-panel"
+          class="absolute right-3 top-full z-30 hidden w-80 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0b0c14]/95 shadow-[0_24px_80px_-16px_rgba(0,0,0,0.8)] backdrop-blur-xl"
+        >
+          <p
+            class="px-4 pt-3 pb-1.5 text-xs font-medium uppercase tracking-wider text-white/40"
+          >
+            Previous chats
+          </p>
+          <div
+            id="history-list"
+            class="max-h-72 overflow-y-auto p-2 pt-0 [scrollbar-color:rgba(255,255,255,0.18)_transparent] [scrollbar-width:thin]"
+          ></div>
+        </div>
+      </header>
+
+      <!-- ============ Column ============ -->
+      <div
+        id="col"
+        class="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col justify-center px-5 pb-[14vh]"
+      >
+        <!-- Empty state: logo + title (hidden once the conversation starts) -->
+        <section id="brand" class="flex flex-col items-center">
+          <!-- Logo -->
+          <div class="relative mb-7 motion-safe:animate-fade-up">
+            <div
+              aria-hidden="true"
+              class="absolute inset-0 rounded-[22px] bg-linear-to-br from-violet-500 to-cyan-400 blur-2xl motion-safe:animate-glow"
+            ></div>
+            <div
+              class="relative grid size-16 place-items-center rounded-[22px] border border-white/15 bg-[#0b0c14]/80 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] backdrop-blur-xl"
+            >
+              <svg
+                class="size-11"
+                viewBox="0 0 64 64"
+                fill="none"
+                role="img"
+                aria-label="Aethel logo"
+              >
+                <defs>
+                  <linearGradient
+                    id="aethel-gradient"
+                    x1="12"
+                    y1="8"
+                    x2="52"
+                    y2="56"
+                    gradientUnits="userSpaceOnUse"
+                  >
+                    <stop stop-color="#E9D5FF" />
+                    <stop offset="0.5" stop-color="#A5B4FC" />
+                    <stop offset="1" stop-color="#67E8F9" />
+                  </linearGradient>
+                </defs>
+                <path
+                  d="M14 52 32 12 50 52"
+                  stroke="url(#aethel-gradient)"
+                  stroke-width="6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <circle cx="32" cy="40" r="5" fill="url(#aethel-gradient)" />
+              </svg>
+            </div>
+          </div>
+
+          <!-- Title -->
+          <h1
+            class="bg-linear-to-b from-white via-white to-white/55 bg-clip-text pb-2 font-serif text-7xl leading-[1.05] tracking-tight text-transparent sm:text-8xl motion-safe:animate-fade-up motion-safe:[animation-delay:120ms]"
+          >
+            Aethel
+          </h1>
+        </section>
+
+        <!-- Conversation (ChatGPT-style: prompt = right-aligned, reply = plain text) -->
+        <section
+          id="chat"
+          role="log"
+          aria-live="polite"
+          class="hidden min-h-0 flex-1 flex-col gap-7 overflow-y-auto pt-8 pb-6 [scrollbar-color:rgba(255,255,255,0.18)_transparent] [scrollbar-width:thin]"
+        ></section>
+
+        <!-- Prompt box -->
+        <form
+          id="prompt-form"
+          class="mt-8 w-full motion-safe:animate-fade-up motion-safe:[animation-delay:240ms]"
+          autocomplete="off"
+        >
+          <!-- gradient border -->
+          <div
+            class="rounded-[28px] bg-linear-to-r from-violet-400/40 via-white/10 to-cyan-300/40 p-px shadow-[0_24px_80px_-24px_rgba(129,140,248,0.45)] transition duration-300 focus-within:from-violet-400/80 focus-within:via-white/20 focus-within:to-cyan-300/80 focus-within:shadow-[0_24px_90px_-20px_rgba(129,140,248,0.6)]"
+          >
+            <div
+              class="flex items-end gap-3 rounded-[27px] bg-[#0b0c14]/95 py-2 pr-2 pl-5 backdrop-blur-xl"
+            >
+              <label for="prompt-input" class="sr-only">Message Aethel</label>
+              <textarea
+                id="prompt-input"
+                name="prompt"
+                rows="1"
+                enterkeyhint="send"
+                placeholder="Ask Aethel anything…"
+                class="max-h-[40vh] flex-1 resize-none overflow-y-hidden bg-transparent py-3 text-base leading-6 text-white/90 caret-violet-300 outline-none placeholder:text-white/40 [scrollbar-color:rgba(255,255,255,0.2)_transparent] [scrollbar-width:thin]"
+              ></textarea>
+
+              <!-- Send button -->
+              <button
+                id="send-btn"
+                type="submit"
+                aria-label="Send message"
+                class="mb-0.5 grid size-11 shrink-0 cursor-pointer place-items-center rounded-full bg-linear-to-br from-violet-300 to-cyan-300 text-[#05060a] shadow-[0_0_24px_-4px_rgba(165,180,252,0.7)] transition duration-200 hover:scale-105 hover:brightness-110 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300 disabled:cursor-not-allowed disabled:from-white/10 disabled:to-white/10 disabled:text-white/35 disabled:shadow-none disabled:hover:scale-100 disabled:hover:brightness-100"
+              >
+                <svg
+                  class="size-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.25"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M12 19V5" />
+                  <path d="m5 12 7-7 7 7" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
