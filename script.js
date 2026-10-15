@@ -35,13 +35,13 @@ const KB_SOURCE = Object.assign(
     provider: "file", // "file" | "firestore"
 
     firestore: {
-      projectId: "onevictoria-96863",
+      projectId: "YOUR_FIREBASE_PROJECT_ID",
       topicsCollection: "topics",  // one doc per topic
       configCollection: "config",  // "app" + "fallback" docs
     },
 
     file: {
-      cloudUrl: "https://raw.githubusercontent.com/RhonelCustodio/aethel/main/knowledge.json",
+      cloudUrl: "https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/aethel/main/knowledge.json",
       localCopy: "knowledge.json",
     },
 
@@ -49,7 +49,7 @@ const KB_SOURCE = Object.assign(
     // dataset (see build-qa-index.js + README-KAGGLE.md). Consulted
     // only when no topic from knowledge.json matches.
     dataset: {
-      url: "",            // e.g. "https://raw.githubusercontent.com/YOU/aethel/main/qa-index.json"
+      url: "https://raw.githubusercontent.com/RhonelCustodio/aethel/main/qa-index.json",
       minScore: 0.55,     // similarity needed (0–1); raise to 0.6+ on noisy datasets
     },
   },
