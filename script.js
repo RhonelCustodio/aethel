@@ -44,6 +44,14 @@ const KB_SOURCE = Object.assign(
       cloudUrl: "https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/aethel/main/knowledge.json",
       localCopy: "knowledge.json",
     },
+
+    // Optional big brain: a qa-index.json built from a Kaggle Q→A
+    // dataset (see build-qa-index.js + README-KAGGLE.md). Consulted
+    // only when no topic from knowledge.json matches.
+    dataset: {
+      url: "",            // e.g. "https://raw.githubusercontent.com/YOU/aethel/main/qa-index.json"
+      minScore: 0.55,     // similarity needed (0–1); raise to 0.6+ on noisy datasets
+    },
   },
   window.AETHEL_KB || {} // optional per-deployment override
 );
@@ -159,7 +167,102 @@ async function loadKnowledge() {
   }
   console.warn("Aethel: no knowledge source available — replies will say so politely.");
 }
-loadKnowledge();
+const knowledgeReady = loadKnowledge();
+
+// ----------------------------------------------------------
+//  Kaggle QA index — similarity lookup over thousands of
+//  question→answer pairs (built by build-qa-index.js).
+//  Loaded in the background; only used when no curated
+//  topic from knowledge.json matched.
+// ----------------------------------------------------------
+const QA_STOPWORDS = new Set([
+  "a", "an", "the", "is", "are", "was", "were", "be", "been", "being", "do", "does", "did",
+  "of", "to", "in", "on", "at", "for", "with", "by", "from", "as", "into", "about", "over",
+  "after", "before", "and", "or", "but", "if", "then", "than", "so", "because",
+  "what", "who", "whom", "whose", "when", "where", "why", "how", "which",
+  "i", "you", "he", "she", "it", "we", "they", "me", "him", "her", "them",
+  "my", "your", "its", "our", "their", "this", "that", "these", "those",
+  "am", "have", "has", "had", "not", "no", "yes", "can", "will", "would",
+  "should", "could", "may", "might", "tell", "say", "said", "please", "just",
+  "really", "know", "much", "many", "get", "got", "make", "made", "there", "here", "also",
+]);
+
+let qaEntries = null; // null = not loaded yet, [] = loaded/failed empty
+let qaLoading = null;
+
+function datasetUrl() {
+  const u = (KB_SOURCE.dataset || {}).url;
+  return u && !u.startsWith("YOUR_") ? u : "";
+}
+
+function ensureDataset() {
+  if (qaEntries || !datasetUrl()) return Promise.resolve(qaEntries);
+  if (!qaLoading) {
+    qaLoading = fetch(datasetUrl()) // default caching: big file, cached by the browser
+      .then((r) => {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then((k) => {
+        if (!Array.isArray(k.entries)) throw new Error("no entries array — run build-qa-index.js first");
+        qaEntries = k.entries.map((e) => ({ q: e.q, a: e.a, set: new Set(e.tokens) }));
+        console.info("Aethel: QA index ready —", qaEntries.length, "entries from:", k.source || "dataset");
+        return qaEntries;
+      })
+      .catch((err) => {
+        console.warn("Aethel: QA index unavailable —", err.message);
+        qaEntries = [];
+        return qaEntries;
+      });
+  }
+  return qaLoading;
+}
+
+// Keep in sync with NORM in build-qa-index.js — common abbreviations
+const QA_NORM = [
+  [/\bww2\b|\bwwii\b/g, "world war 2"],
+  [/\bww1\b|\bwwi\b/g, "world war 1"],
+  [/\busa\b/g, "united states"],
+  [/\buk\b/g, "united kingdom"],
+  [/\bph\b|\bpinoy\b/g, "philippines filipino"],
+  [/\btv\b/g, "television"],
+];
+
+function qaTokenize(text) {
+  let t = text.toLowerCase();
+  for (const [re, out] of QA_NORM) t = t.replace(re, out);
+  t = t.replace(/[^a-z0-9ñ\s]/g, " ");
+  const words = t.match(/[a-z0-9ñ]+/g) || [];
+  return words.filter((w) => !QA_STOPWORDS.has(w));
+}
+
+// Score = Dice overlap weighted with containment, +1 for exact match.
+// Dice-heavy so that "capital of japan" doesn't steal the France entry:
+// the missing discriminative token (japan) sinks the score.
+function searchDataset(prompt) {
+  if (!qaEntries || !qaEntries.length) return null;
+  const norm = prompt.toLowerCase().replace(/[^a-z0-9ñ\s]/g, " ").replace(/\s+/g, " ").trim().replace(/[?.!,;:]+$/g, "").trim();
+  const qSet = new Set(qaTokenize(norm));
+  if (!qSet.size) return null;
+  const min = KB_SOURCE.dataset.minScore ?? 0.55;
+
+  let best = null;
+  let bestScore = 0;
+  for (const e of qaEntries) {
+    let overlap = 0;
+    for (const t of qSet) if (e.set.has(t)) overlap++;
+    if (!overlap) continue;
+    const containment = overlap / qSet.size;
+    const dice = (2 * overlap) / (qSet.size + e.set.size);
+    let score = 0.35 * containment + 0.65 * dice;
+    if (norm === e.q) score += 1; // typed the exact dataset question
+    if (score > bestScore) { bestScore = score; best = e; }
+  }
+  return best && bestScore >= min ? best : null;
+}
+
+// Warm the index early (non-blocking)
+if (datasetUrl()) knowledgeReady.then(() => ensureDataset());
 
 // Escape text before putting it inside a RegExp
 function escapeRegExp(s) {
@@ -223,9 +326,13 @@ function pickAnswer(topic, lang) {
   return pool[i];
 }
 
-// The actual "AI": prompt in, reply out (language-matched)
-function replyTo(prompt) {
+// The actual "AI": prompt in, reply out.
+// Tier 1: curated topics (knowledge.json, language-matched)
+// Tier 2: Kaggle QA index similarity search (if configured)
+// Tier 3: polite fallback
+async function replyTo(prompt) {
   const lang = detectLang(prompt);
+  await knowledgeReady;
   if (!knowledge) {
     return lang === "fil"
       ? "Hindi ma-load ang brain ko — mula GitHub, Firestore, o local file. I-refresh at subukan ulit."
@@ -233,6 +340,10 @@ function replyTo(prompt) {
   }
   const topic = findTopic(prompt);
   if (!topic) {
+    // Not a curated topic — try the Kaggle-derived index
+    await ensureDataset();
+    const hit = searchDataset(prompt);
+    if (hit) return hit.a;
     return pickAnswer({ id: "fallback", answers: knowledge.fallback?.answers, answers_tl: knowledge.fallback?.answers_tl }, lang)
       || (lang === "fil" ? "Wala pa 'yon sa knowledge base ko." : "I don't know that one yet.");
   }
@@ -397,7 +508,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 // Re-open a saved chat (rendered instantly, no typing animation)
-function restoreChat(c) {
+async function restoreChat(c) {
   currentChatId = c.id;
   chat.innerHTML = "";
   for (const m of c.messages) {
@@ -407,6 +518,21 @@ function restoreChat(c) {
   startChat();
   scrollToBottom();
   persist();
+
+  // Repair: a refresh between send and reply can leave a dangling
+  // user message — answer it now and complete the history.
+  const last = c.messages[c.messages.length - 1];
+  if (last && last.role === "user") {
+    const pending = addAssistantRow();
+    scrollToBottom();
+    const reply = await replyTo(last.text);
+    c.messages.push({ role: "assistant", text: reply });
+    persist();
+    renderHistory();
+    pending.body.textContent = reply;
+    addCopyButton(pending.actions, reply);
+    scrollToBottom();
+  }
 }
 
 // ----------------------------------------------------------
@@ -553,23 +679,25 @@ function updateSendButton() {
 }
 
 // Send the prompt (used by both the Enter key and the send button)
-function sendPrompt() {
+async function sendPrompt() {
   const prompt = input.value.trim();
   if (!prompt) return; // nothing to send
 
   startChat();
   addUserMessage(prompt);
-  const reply = replyTo(prompt); // computed now, shown after a short "typing" beat
-  recordMessage("user", prompt); // saved right away, even before the animation
-  recordMessage("assistant", reply);
+  recordMessage("user", prompt); // saved right away, even before the reply
   const pending = addAssistantRow();
   scrollToBottom();
 
-  setTimeout(() => {
-    pending.body.textContent = reply;
-    addCopyButton(pending.actions, reply);
-    scrollToBottom();
-  }, 400);
+  const t0 = Date.now();
+  const reply = await replyTo(prompt); // topic → Kaggle index → fallback
+  const minBeat = Math.max(0, 350 - (Date.now() - t0)); // keep the typing feel
+  await new Promise((r) => setTimeout(r, minBeat));
+
+  pending.body.textContent = reply;
+  addCopyButton(pending.actions, reply);
+  recordMessage("assistant", reply);
+  scrollToBottom();
 
   // Clear and reset the prompt box
   input.value = "";
