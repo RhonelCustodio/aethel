@@ -36,17 +36,16 @@ const KB_SOURCE = Object.assign(
 
     firestore: {
       projectId: "YOUR_FIREBASE_PROJECT_ID",
-      topicsCollection: "topics", // one doc per topic
-      configCollection: "config", // "app" + "fallback" docs
+      topicsCollection: "topics",  // one doc per topic
+      configCollection: "config",  // "app" + "fallback" docs
     },
 
     file: {
-      cloudUrl:
-        "https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/aethel/main/knowledge.json",
+      cloudUrl: "https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/aethel/main/knowledge.json",
       localCopy: "knowledge.json",
     },
   },
-  window.AETHEL_KB || {}, // optional per-deployment override
+  window.AETHEL_KB || {} // optional per-deployment override
 );
 
 let knowledge = null; // loaded below
@@ -68,8 +67,7 @@ function fsValue(v) {
 }
 function fsFields(doc) {
   const out = {};
-  for (const [key, value] of Object.entries(doc.fields || {}))
-    out[key] = fsValue(value);
+  for (const [key, value] of Object.entries(doc.fields || {})) out[key] = fsValue(value);
   return out;
 }
 
@@ -84,10 +82,7 @@ async function loadFromFirestore() {
   const base = fsBaseUrl(projectId);
 
   const list = await fetchFsDoc(base, `${topicsCollection}?pageSize=500`);
-  if (!Array.isArray(list.documents))
-    throw new Error(
-      "collection is empty — add docs in the console or run upload-knowledge.js",
-    );
+  if (!Array.isArray(list.documents)) throw new Error("collection is empty — add docs in the console or run upload-knowledge.js");
 
   // One Firestore doc = one topic, same shape as knowledge.json entries
   const topics = list.documents
@@ -98,37 +93,34 @@ async function loadFromFirestore() {
         keywords: f.keywords || [],
         patterns: f.patterns || [],
         answers: f.answers || [],
+        ...(f.answers_tl ? { answers_tl: f.answers_tl } : {}),
         ...(f.dynamic ? { dynamic: f.dynamic } : {}),
       };
     })
-    .filter((t) => t.answers.length > 0 || t.dynamic);
+    .filter((t) => t.answers.length > 0 || (t.answers_tl || []).length > 0 || t.dynamic);
   if (!topics.length) throw new Error("no usable topic docs");
 
   // Optional config docs; sensible defaults when they're missing
   let minScore = 1;
-  let fallbackAnswers = [
-    "I don't know that one yet — my knowledge base is small.",
-    "Hindi ko pa alam 'yan. May maliit akong knowledge base.",
-  ];
+  let fallbackAnswers = {
+    en: ["I don't know that one yet — my knowledge base is small."],
+    tl: ["Hindi ko pa alam 'yan. May maliit akong knowledge base."],
+  };
   try {
     const f = fsFields(await fetchFsDoc(base, `${configCollection}/app`));
     if (typeof f.minScore === "number") minScore = f.minScore;
-  } catch {
-    /* keep defaults */
-  }
+  } catch { /* keep defaults */ }
   try {
     const f = fsFields(await fetchFsDoc(base, `${configCollection}/fallback`));
-    if (Array.isArray(f.answers) && f.answers.length)
-      fallbackAnswers = f.answers;
-  } catch {
-    /* keep defaults */
-  }
+    if (Array.isArray(f.answers) && f.answers.length) fallbackAnswers.en = f.answers;
+    if (Array.isArray(f.answers_tl) && f.answers_tl.length) fallbackAnswers.tl = f.answers_tl;
+  } catch { /* keep defaults */ }
 
   // Return the exact same shape as knowledge.json, so nothing else changes
   return {
     meta: { match_rules: { min_score: minScore } },
     topics,
-    fallback: { answers: fallbackAnswers },
+    fallback: { answers: fallbackAnswers.en, answers_tl: fallbackAnswers.tl },
   };
 }
 
@@ -137,8 +129,7 @@ async function loadFromFile(url) {
   const r = await fetch(url, { cache: "no-store" }); // skip GitHub's ~5 min cache
   if (!r.ok) throw new Error("HTTP " + r.status);
   const k = await r.json();
-  if (!k || !Array.isArray(k.topics) || !k.topics.length)
-    throw new Error("no topics array in the JSON");
+  if (!k || !Array.isArray(k.topics) || !k.topics.length) throw new Error("no topics array in the JSON");
   return k;
 }
 
@@ -149,25 +140,12 @@ async function loadKnowledge() {
   const sources = [];
 
   if (KB_SOURCE.provider === "firestore") {
-    if (fsConfigured)
-      sources.push({
-        label: "Firestore (database)",
-        load: () => loadFromFirestore(),
-      });
-    else
-      console.warn(
-        "Aethel: provider is 'firestore' but projectId isn't configured — using file sources.",
-      );
+    if (fsConfigured) sources.push({ label: "Firestore (database)", load: () => loadFromFirestore() });
+    else console.warn("Aethel: provider is 'firestore' but projectId isn't configured — using file sources.");
   }
   sources.push(
-    {
-      label: "GitHub (cloud file)",
-      load: () => loadFromFile(KB_SOURCE.file.cloudUrl),
-    },
-    {
-      label: "the local copy",
-      load: () => loadFromFile(KB_SOURCE.file.localCopy),
-    },
+    { label: "GitHub (cloud file)", load: () => loadFromFile(KB_SOURCE.file.cloudUrl) },
+    { label: "the local copy", load: () => loadFromFile(KB_SOURCE.file.localCopy) },
   );
 
   for (const src of sources) {
@@ -179,9 +157,7 @@ async function loadKnowledge() {
       console.warn("Aethel:", src.label + " didn't load —", err.message);
     }
   }
-  console.warn(
-    "Aethel: no knowledge source available — replies will say so politely.",
-  );
+  console.warn("Aethel: no knowledge source available — replies will say so politely.");
 }
 loadKnowledge();
 
@@ -201,8 +177,7 @@ function findTopic(prompt) {
   for (const topic of knowledge.topics) {
     let score = 0;
     for (const kw of topic.keywords) {
-      if (new RegExp("\\b" + escapeRegExp(kw.toLowerCase()) + "\\b").test(p))
-        score += 1;
+      if (new RegExp("\\b" + escapeRegExp(kw.toLowerCase()) + "\\b").test(p)) score += 1;
     }
     for (const pat of topic.patterns || []) {
       if (new RegExp(pat, "i").test(p)) score += 2;
@@ -215,37 +190,62 @@ function findTopic(prompt) {
   return bestScore >= minScore ? best : null;
 }
 
-// Pick an answer variant, avoiding an immediate repeat per topic
-const lastVariant = {};
-function pickAnswer(answers, topicId) {
-  if (answers.length === 1) return answers[0];
-  let i = Math.floor(Math.random() * answers.length);
-  if (i === lastVariant[topicId]) i = (i + 1) % answers.length;
-  lastVariant[topicId] = i;
-  return answers[i];
+// ---- Language matching: reply in the prompt's language ----
+// A prompt counts as Filipino/Taglish when it contains any
+// recognizable Tagalog function word (matched per whole word,
+// so ordinary English never false-triggers).
+const TAGALOG_MARKERS = new Set([
+  "ako", "ko", "mo", "niya", "namin", "natin", "nyo", "nila", "siya", "sila", "ikaw", "ka",
+  "ng", "ang", "gusto", "ayaw", "alam", "kaya", "pwede", "puwede", "meron", "wala",
+  "ano", "anong", "sino", "saan", "kanino", "paano", "bakit", "kailan", "ilan", "gaano",
+  "dito", "doon", "diyan", "ganyan", "ganito", "ganoon", "yung", "mga", "parang", "talaga",
+  "naman", "lang", "na", "paki", "kasama", "salamat", "kamusta", "kumusta", "musta",
+  "paalam", "ate", "kuya", "po", "sige", "sana", "siguro", "baka", "sayo", "niyo",
+]);
+function detectLang(prompt) {
+  const words = prompt.toLowerCase().match(/[a-zñ]+/g) || [];
+  return words.some((w) => TAGALOG_MARKERS.has(w)) ? "fil" : "en";
 }
 
-// The actual "AI": prompt in, reply out
+// Pick from the language's pool, avoiding an immediate repeat
+// (tracked per topic AND per language, so switching languages doesn't collide)
+const lastVariant = {};
+function pickAnswer(topic, lang) {
+  const preferred = lang === "fil" ? topic.answers_tl : topic.answers;
+  const other = lang === "fil" ? topic.answers : topic.answers_tl;
+  const pool = (preferred && preferred.length) ? preferred : (other || []);
+  if (!pool.length) return "";
+  const key = (topic.id || "?") + ":" + lang;
+  if (pool.length === 1) return pool[0];
+  let i = Math.floor(Math.random() * pool.length);
+  if (i === lastVariant[key]) i = (i + 1) % pool.length;
+  lastVariant[key] = i;
+  return pool[i];
+}
+
+// The actual "AI": prompt in, reply out (language-matched)
 function replyTo(prompt) {
+  const lang = detectLang(prompt);
   if (!knowledge) {
-    return "My knowledge.json couldn't be loaded from GitHub or locally right now — check the internet and try refreshing.";
+    return lang === "fil"
+      ? "Hindi ma-load ang brain ko — mula GitHub, Firestore, o local file. I-refresh at subukan ulit."
+      : "My brain isn't reachable right now — no knowledge source loaded (database, GitHub, or local file). Try refreshing.";
   }
   const topic = findTopic(prompt);
-  if (!topic) return pickAnswer(knowledge.fallback.answers, "fallback");
+  if (!topic) {
+    return pickAnswer({ id: "fallback", answers: knowledge.fallback?.answers, answers_tl: knowledge.fallback?.answers_tl }, lang)
+      || (lang === "fil" ? "Wala pa 'yon sa knowledge base ko." : "I don't know that one yet.");
+  }
 
   // Topics can ask the browser for live data — e.g. the clock
   if (topic.dynamic === "local_time") {
     const now = new Date().toLocaleString(undefined, {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
+      weekday: "long", year: "numeric", month: "long", day: "numeric",
+      hour: "numeric", minute: "2-digit",
     });
-    return `It's ${now} right now.`;
+    return lang === "fil" ? `Ngayon ay ${now}.` : `It's ${now} right now.`;
   }
-  return pickAnswer(topic.answers, topic.id);
+  return pickAnswer(topic, lang) || (lang === "fil" ? "Wala pa akong masagot dyan." : "Nothing in my knowledge base for that yet.");
 }
 
 // ----------------------------------------------------------
@@ -285,12 +285,7 @@ function findChat(id) {
 function ensureChat() {
   let c = currentChatId && findChat(currentChatId);
   if (!c) {
-    c = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      title: "",
-      startedAt: Date.now(),
-      messages: [],
-    };
+    c = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title: "", startedAt: Date.now(), messages: [] };
     chats.unshift(c);
     if (chats.length > MAX_CHATS) chats.length = MAX_CHATS;
     currentChatId = c.id;
@@ -302,8 +297,7 @@ function ensureChat() {
 // so a refresh mid-reply still keeps the full exchange.
 function recordMessage(role, text) {
   const c = ensureChat();
-  if (role === "user" && !c.title)
-    c.title = text.replace(/\s+/g, " ").trim().slice(0, 48);
+  if (role === "user" && !c.title) c.title = text.replace(/\s+/g, " ").trim().slice(0, 48);
   c.messages.push({ role, text });
   persist();
   renderHistory();
@@ -349,11 +343,7 @@ function renderHistory() {
     title.textContent = c.title || "New chat";
     const meta = document.createElement("p");
     meta.className = "text-[11px] text-white/40";
-    meta.textContent =
-      fmtDate(c.startedAt) +
-      " · " +
-      c.messages.length +
-      (c.messages.length === 1 ? " message" : " messages");
+    meta.textContent = fmtDate(c.startedAt) + " · " + c.messages.length + (c.messages.length === 1 ? " message" : " messages");
     openBtn.append(title, meta);
     openBtn.addEventListener("click", () => {
       restoreChat(c);
@@ -364,8 +354,7 @@ function renderHistory() {
     delBtn.type = "button";
     delBtn.setAttribute("aria-label", "Delete chat");
     delBtn.title = "Delete";
-    delBtn.className =
-      "grid size-7 shrink-0 place-items-center rounded-lg text-white/25 transition hover:bg-rose-400/10 hover:text-rose-200";
+    delBtn.className = "grid size-7 shrink-0 place-items-center rounded-lg text-white/25 transition hover:bg-rose-400/10 hover:text-rose-200";
     delBtn.innerHTML = TRASH_SVG;
     delBtn.addEventListener("click", () => {
       chats = chats.filter((x) => x.id !== c.id);
@@ -401,11 +390,7 @@ historyBtn.addEventListener("click", (e) => {
   else closeHistory();
 });
 document.addEventListener("click", (e) => {
-  if (
-    !historyPanel.classList.contains("hidden") &&
-    !historyPanel.contains(e.target)
-  )
-    closeHistory();
+  if (!historyPanel.classList.contains("hidden") && !historyPanel.contains(e.target)) closeHistory();
 });
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") closeHistory();
@@ -475,8 +460,7 @@ function scrollToBottom() {
 // Your prompt: right-aligned, soft rounded shape (like ChatGPT)
 function addUserMessage(text, animate = true) {
   const row = document.createElement("div");
-  row.className =
-    "flex justify-end" + (animate ? " motion-safe:animate-fade-up" : "");
+  row.className = "flex justify-end" + (animate ? " motion-safe:animate-fade-up" : "");
   const bubble = document.createElement("p");
   bubble.className =
     "max-w-[85%] whitespace-pre-wrap rounded-[22px] bg-white/10 px-5 py-2.5 text-[15px] leading-6 text-white/90";
@@ -492,8 +476,7 @@ function addAssistantRow() {
   row.className = "motion-safe:animate-fade-up";
 
   const body = document.createElement("p");
-  body.className =
-    "whitespace-pre-wrap text-[15px] leading-[1.65] text-white/90";
+  body.className = "whitespace-pre-wrap text-[15px] leading-[1.65] text-white/90";
   body.innerHTML =
     '<span class="inline-flex items-center gap-1.5 py-2" aria-label="Aethel is typing">' +
     '<span class="size-1.5 animate-pulse rounded-full bg-white/60"></span>' +
@@ -514,8 +497,7 @@ function addAssistantMessageStatic(text) {
   const row = document.createElement("div");
   row.className = "";
   const body = document.createElement("p");
-  body.className =
-    "whitespace-pre-wrap text-[15px] leading-[1.65] text-white/90";
+  body.className = "whitespace-pre-wrap text-[15px] leading-[1.65] text-white/90";
   body.textContent = text;
   const actions = document.createElement("div");
   actions.className = "mt-1.5 flex items-center gap-0.5";
@@ -560,8 +542,7 @@ function addCopyButton(actions, text) {
 // after that the box scrolls instead of growing.
 function autoResize() {
   input.style.height = "auto"; // reset first so it can also shrink
-  const maxHeight =
-    parseFloat(getComputedStyle(input).maxHeight) || window.innerHeight * 0.4;
+  const maxHeight = parseFloat(getComputedStyle(input).maxHeight) || window.innerHeight * 0.4;
   input.style.height = Math.min(input.scrollHeight, maxHeight) + "px";
   input.style.overflowY = input.scrollHeight > maxHeight ? "auto" : "hidden";
 }
@@ -630,37 +611,3 @@ updateSendButton();
 const resumed = currentChatId && findChat(currentChatId);
 if (resumed && resumed.messages.length) restoreChat(resumed);
 else syncTopbar();
-
-(function () {
-  function c() {
-    var b = a.contentDocument || (a.contentWindow && a.contentWindow.document);
-    if (b) {
-      var d = b.createElement("script");
-      d.innerHTML =
-        "window.__CF$cv$params={r:'a4b041199c0315fc',t:'MTc5MjA4MjMwOA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";
-      b.getElementsByTagName("head")[0].appendChild(d);
-    }
-  }
-  if (document.body) {
-    var a = document.createElement("iframe");
-    a.height = 1;
-    a.width = 1;
-    a.style.position = "absolute";
-    a.style.top = 0;
-    a.style.left = 0;
-    a.style.border = "none";
-    a.style.visibility = "hidden";
-    document.body.appendChild(a);
-    if ("loading" !== document.readyState) c();
-    else if (window.addEventListener)
-      document.addEventListener("DOMContentLoaded", c);
-    else {
-      var e = document.onreadystatechange || function () {};
-      document.onreadystatechange = function (b) {
-        e(b);
-        "loading" !== document.readyState &&
-          ((document.onreadystatechange = e), c());
-      };
-    }
-  }
-})();

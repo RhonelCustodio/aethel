@@ -38,6 +38,7 @@ admin.initializeApp({ projectId });
       keywords: topic.keywords || [],
       patterns: topic.patterns || [],
       answers: topic.answers || [],
+      ...(topic.answers_tl ? { answers_tl: topic.answers_tl } : {}),
       ...(topic.dynamic ? { dynamic: topic.dynamic } : {}),
     });
   }
